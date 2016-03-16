@@ -1,4 +1,5 @@
 #include "server_head.h"
+/akdhkfh
 
 //listChatRoom glChatRoom;            //记录所有的聊天室
 
