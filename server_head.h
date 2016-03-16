@@ -33,6 +33,7 @@ typedef struct user
 	struct sockaddr_in ipAddr;   //用户ip地址
 	char userName[USERNAME_MAX];  //用户名 
 	struct user *next;          //指向下一个用户
+	int flag;                   //若为1，则该用户当前频道是该聊天室，若为0，则该用户当前频道不是该聊天室;
 }user;
 
 //定义聊天室结构
@@ -137,7 +138,7 @@ chatRoom* findUserFromList(struct sockaddr_in addr)
 		curUser = curRoom->userList;
 		while(curUser)		
 		{
-			if(addrEqual(addr,curUser->ipAddr))
+			if(addrEqual(addr,curUser->ipAddr) && curUser->flag)
 			{
 				if((err = pthread_mutex_unlock(&curRoom->roomMutex)) != 0)
 				{
@@ -196,6 +197,7 @@ int addUserToRoom(struct sockaddr_in addr,const char *userName,const char *roomN
 	printf("%s\n",inet_ntoa(curUser->ipAddr.sin_addr));
 	strcpy(curUser->userName,userName); 
 	curUser->next = NULL;
+	curUser->flag = 1;
 	
 	if(room->userList == NULL)
 	{
@@ -278,14 +280,17 @@ void reqSay(threadPara request,chatRoom *userRoom)
 	char *buff = (char *)malloc(len);   //改为动态数组
 	snprintf(buff,len,"%s:%s\n",userName,request.content);
 	printf("%s\n",curUser->userName );
-	printf("%x\n",curUser->ipAddr.sin_addr.s_addr);
 	printf("%s\n",inet_ntoa(curUser->ipAddr.sin_addr));
 	while(curUser)
 	{
-		int flag = sendto(request.fd,buff,len,0,(struct sockaddr*)&(curUser->ipAddr),sizeof(curUser->ipAddr));
-		if(flag < 0)
+		if(curUser->flag == 1) 
 		{
-			printf("send to %s error\n",inet_ntoa(curUser->ipAddr.sin_addr));
+			err = sendto(request.fd,buff,len,0,(struct sockaddr*)&(curUser->ipAddr),sizeof(curUser->ipAddr));
+			if(err < 0)
+			{
+				printf("send to %s error\n",inet_ntoa(curUser->ipAddr.sin_addr));
+			}
+
 		}
 		curUser = curUser->next;
 
@@ -365,6 +370,7 @@ void reqJoin(struct sockaddr_in addr,const char *roomName,chatRoom *srcRoom)
 	if(strcmp(roomName,srcRoom->roomName) == 0)	 //如果要加入的聊天室就是当前聊天室，则不做处理
 		return;
 
+	if(find)
 	//将该用户从原聊天室中取出
 	int err;
 	if((err = pthread_mutex_lock(&srcRoom->roomMutex)) != 0)
@@ -376,7 +382,6 @@ void reqJoin(struct sockaddr_in addr,const char *roomName,chatRoom *srcRoom)
 	if(addrEqual(curUser->ipAddr,addr))
 	{
 		desUser = curUser;
-		srcRoom->userList = curUser->next;
 	}
 	else
 	{
@@ -385,12 +390,12 @@ void reqJoin(struct sockaddr_in addr,const char *roomName,chatRoom *srcRoom)
 			if(addrEqual(curUser->next->ipAddr,addr))
 			{
 				desUser = curUser->next;
-				curUser->next = desUser->next;
 				break;
 			}
 			curUser = curUser->next;
 		}
 	}
+	desUser->flag = 0;
 	if((err = pthread_mutex_unlock(&srcRoom->roomMutex)) != 0)    //将用户从原来的聊天室提取出来后解锁原聊天室
 	{
 		errThread("reqJoin unlock err",err);
@@ -401,7 +406,6 @@ void reqJoin(struct sockaddr_in addr,const char *roomName,chatRoom *srcRoom)
 		createRoom(roomName);
 		addUserToRoom(addr,desUser->userName,roomName);
 	}
-	free(desUser);                  
 	printf("%s join %s\n",desUser->userName,roomName);
 	
 }
@@ -424,7 +428,6 @@ void reqSwitch(int fd,struct sockaddr_in addr,const char* roomName,chatRoom *src
 	if(addrEqual(curUser->ipAddr,addr))
 	{
 		desUser = curUser;
-		srcRoom->userList = curUser->next;
 	}
 	else
 	{
@@ -433,12 +436,12 @@ void reqSwitch(int fd,struct sockaddr_in addr,const char* roomName,chatRoom *src
 			if(addrEqual(curUser->next->ipAddr,addr))
 			{
 				desUser = curUser->next;
-				curUser->next = desUser->next;
 				break;
 			}
 			curUser = curUser->next;
 		}
 	}
+	desUser->flag = 0;     //代表着当前聊天频道不在该聊天室
 	if((err = pthread_mutex_unlock(&srcRoom->roomMutex)) != 0)    //将用户从原来的聊天室提取出来后解锁原聊天室
 	{
 		errThread("reqJoin unlock err",err);
@@ -459,7 +462,6 @@ void reqSwitch(int fd,struct sockaddr_in addr,const char* roomName,chatRoom *src
 	{
 		printf("%s switch %s\n",desUser->userName,roomName);
 	}
-	free(desUser);                  
 
 
 }
