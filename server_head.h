@@ -183,6 +183,7 @@ int addUserToRoom(struct sockaddr_in addr,const char *userName,const char *roomN
 	{
 		return 0;
 	}	
+	
 
 	//对该聊天室上锁
 	int err;
@@ -369,43 +370,60 @@ void reqJoin(struct sockaddr_in addr,const char *roomName,chatRoom *srcRoom)
 {
 	if(strcmp(roomName,srcRoom->roomName) == 0)	 //如果要加入的聊天室就是当前聊天室，则不做处理
 		return;
-
-	if(find)
-	//将该用户从原聊天室中取出
+	
+	//如果将要加入的聊天室中已经有该用户了，那么直接将该用户的flag变为1即可。
+	chatRoom* desRoom = findRoomFromList(roomName);
 	int err;
+	int jud = 0;
+
+	 //若该要加入的聊天室不存在，则新建一个
+	if(desRoom == NULL)
+	{
+		createRoom(roomName);
+	}
+	else
+	{
+		//查找该用户是否已经存在于将要加入的聊天室中了
+		//先对该聊天室上锁
+
+		if((err = pthread_mutex_lock(&desRoom->roomMutex)) != 0)
+		{
+			errThread("reqJoin lock err",err);
+		}
+
+		user *tmpUser = findUserFromRoom(addr,desRoom);
+		if(tmpUser)   //若该用户已经存在于该聊天室中了
+		{
+			tmpUser->flag = 1;
+			jud = 1;
+		}
+
+		if((err = pthread_mutex_unlock(&desRoom->roomMutex)) != 0)
+		{
+			errThread("reqJoin unlock err",err);
+		}
+
+	}
+
+	//将该用户从原聊天室中取出
 	if((err = pthread_mutex_lock(&srcRoom->roomMutex)) != 0)
 	{
 		errThread("reqJoin lock err",err);
 	}
-	user* curUser = srcRoom->userList;
-	user* desUser;    //指向要加入其它聊天室的用户
-	if(addrEqual(curUser->ipAddr,addr))
-	{
-		desUser = curUser;
-	}
-	else
-	{
-		while(curUser->next)	
-		{
-			if(addrEqual(curUser->next->ipAddr,addr))
-			{
-				desUser = curUser->next;
-				break;
-			}
-			curUser = curUser->next;
-		}
-	}
+
+	user* desUser = findUserFromRoom(addr,srcRoom);    //指向要加入其它聊天室的用户
 	desUser->flag = 0;
 	if((err = pthread_mutex_unlock(&srcRoom->roomMutex)) != 0)    //将用户从原来的聊天室提取出来后解锁原聊天室
 	{
 		errThread("reqJoin unlock err",err);
 	}
-	err = addUserToRoom(addr,desUser->userName,roomName);
-	if(err == 0)                         //该聊天室不存在，新建一个
+
+	//如果该用户不存在于将要加入的聊天室中，那么新建立一个用户存于该聊天室中
+	if(jud == 0)
 	{
-		createRoom(roomName);
 		addUserToRoom(addr,desUser->userName,roomName);
 	}
+
 	printf("%s join %s\n",desUser->userName,roomName);
 	
 }
@@ -417,37 +435,13 @@ void reqSwitch(int fd,struct sockaddr_in addr,const char* roomName,chatRoom *src
 		return;
 
 
-	//将该用户从原聊天室中取出
+	//如果将要加入的聊天室中已经有该用户了，那么直接将该用户的flag变为1即可。
+	chatRoom* desRoom = findRoomFromList(roomName);
 	int err;
-	if((err = pthread_mutex_lock(&srcRoom->roomMutex)) != 0)
-	{
-		errThread("reqJoin lock err",err);
-	}
-	user* curUser = srcRoom->userList;
-	user* desUser;    //指向要加入其它聊天室的用户
-	if(addrEqual(curUser->ipAddr,addr))
-	{
-		desUser = curUser;
-	}
-	else
-	{
-		while(curUser->next)	
-		{
-			if(addrEqual(curUser->next->ipAddr,addr))
-			{
-				desUser = curUser->next;
-				break;
-			}
-			curUser = curUser->next;
-		}
-	}
-	desUser->flag = 0;     //代表着当前聊天频道不在该聊天室
-	if((err = pthread_mutex_unlock(&srcRoom->roomMutex)) != 0)    //将用户从原来的聊天室提取出来后解锁原聊天室
-	{
-		errThread("reqJoin unlock err",err);
-	}
-	err = addUserToRoom(addr,desUser->userName,roomName);
-	if(err == 0)                         //该聊天室不存在，新建一个
+	int jud = 0;
+
+	 //若该要加入的聊天室不存在，则新建一个
+	if(desRoom == NULL)
 	{
 		char buff[47];  //47 = CHANNELNAME_MAX + 15	
 		sprintf(buff,"%s is not exist.\n",roomName);
@@ -456,20 +450,108 @@ void reqSwitch(int fd,struct sockaddr_in addr,const char* roomName,chatRoom *src
 		{
 			printf("send to %s error\n",inet_ntoa(addr.sin_addr));
 		}
+		return;
 
 	}
 	else
 	{
-		printf("%s switch %s\n",desUser->userName,roomName);
+		//查找该用户是否已经存在于将要加入的聊天室中了
+		//先对该聊天室上锁
+
+		if((err = pthread_mutex_lock(&desRoom->roomMutex)) != 0)
+		{
+			errThread("reqJoin lock err",err);
+		}
+
+		user *tmpUser = findUserFromRoom(addr,desRoom);
+		if(tmpUser)   //若该用户已经存在于该聊天室中了
+		{
+			tmpUser->flag = 1;
+			jud = 1;
+		}
+
+		if((err = pthread_mutex_unlock(&desRoom->roomMutex)) != 0)
+		{
+			errThread("reqJoin unlock err",err);
+		}
+
 	}
 
+	//将该用户从原聊天室中取出
+	if((err = pthread_mutex_lock(&srcRoom->roomMutex)) != 0)
+	{
+		errThread("reqJoin lock err",err);
+	}
+
+	user* desUser = findUserFromRoom(addr,srcRoom);    //指向要加入其它聊天室的用户
+	desUser->flag = 0;
+	if((err = pthread_mutex_unlock(&srcRoom->roomMutex)) != 0)    //将用户从原来的聊天室提取出来后解锁原聊天室
+	{
+		errThread("reqJoin unlock err",err);
+	}
+
+	//如果该用户不存在于将要加入的聊天室中，那么新建立一个用户存于该聊天室中
+	if(jud == 0)
+	{
+		addUserToRoom(addr,desUser->userName,roomName);
+	}
+
+	printf("%s switch %s\n",desUser->userName,roomName);
 
 }
 
 //执行/leave指令，将该用户从聊天室删除 
 void reqLeave(int fd,struct sockaddr_in addr,const char *roomName,chatRoom *srcRoom)
 {
-	
+	//先查找该用户是否存在于将要退出的聊天室中，如果不是甚至该聊天室不存在，那么不需要做任何处理。
+	//如果存在于该聊天室中，其将其找出并删除，释放空间
+	chatRoom *delRoom = findRoomFromList(roomName);
+	if(delRoom == NULL)
+	{
+		return;
+	}
+
+	int err;
+	if((err = pthread_mutex_lock(&delRoom->roomMutex)))
+	{
+		errThread("reqLeave lock err",err);
+	}
+	user *desUser = findUserFromRoom(addr,delRoom);
+	if(desUser == NULL)
+	{
+		//该用户不存在于将要退出的聊天室中	
+		if((err = pthread_mutex_unlock(&delRoom->roomMutex)))
+		{
+			errThread("reqLeave unlock err",err);
+		}
+		return;
+	}
+
+	//如果存在，那么将其删除
+	user* curUser= delRoom->userList;
+	if(addrEqual(curUser->ipAddr,addr))	
+	{
+		delRoom->userList = curUser->next;	
+	}
+	else
+	{
+		while(curUser->next)
+		{
+		
+			if(addrEqual(curUser->next->ipAddr,addr))
+			{
+				curUser->next = desUser->next;
+				break;
+			}
+			curUser = curUser->next;
+		}
+	}
+	if((err = pthread_mutex_unlock(&delRoom->roomMutex)) != 0)
+	{
+		errThread("reqLeave unlock err",err);
+	}
+	free(desUser);
+
 }
 
 
