@@ -14,17 +14,6 @@
 #define CHANNELNAME_MAX 32   //聊天室名字长度
 #define SAY_MAX 64       //每次聊天的最大字节数
  
-
-//宏定义请求类型
-#define REQ_LOGIN 0       
-#define REQ_LOGOUT 1
-#define REQ_JOIN 2
-#define REQ_LEAVE 3
-#define REQ_SAY 4
-#define REQ_LIST 5
-#define REQ_WHO 6
-
-
 #define SERPORT  8888    //服务器端口号
 
 //定义用户类型,采用链表的形式
@@ -511,7 +500,39 @@ void reqLeave(int fd,struct sockaddr_in addr,const char *roomName,chatRoom *srcR
 		return;
 	}
 
+
 	int err;
+	//如果将要退出的聊天室就是当前所在的聊天室，那么频道回到Common，若是Common频道，则不退出。
+	char buff[BUFF_MAX];
+	if(strcmp(roomName,"Common") == 0)	 
+	{
+		sprintf(buff,"Sorry,Common 聊天室不可退出\n");
+		if((err = sendto(fd,buff,strlen(buff),0,(struct sockaddr*)&addr,sizeof(addr))) == -1)	
+		{
+			printf("sendto %s error.\n",inet_ntoa(addr.sin_addr));
+		}
+
+		return;
+	}
+
+	if(strcmp(roomName,srcRoom->roomName) == 0)	
+	{
+		//将频道切换到Common聊天室中
+		chatRoom *commonRoom = findRoomFromList("Common");
+		if((err = pthread_mutex_lock(&commonRoom->roomMutex)))
+		{
+			errThread("reqLeave lock err",err);
+		}
+		user *commonUser = findUserFromRoom(addr,commonRoom);
+		commonUser->flag = 1;
+		if((err = pthread_mutex_unlock(&commonRoom->roomMutex)))
+		{
+			errThread("reqLeave unlock err",err);
+		}
+
+	}
+	
+	//将该用户从退出的聊天室中删除
 	if((err = pthread_mutex_lock(&delRoom->roomMutex)))
 	{
 		errThread("reqLeave lock err",err);
@@ -550,6 +571,12 @@ void reqLeave(int fd,struct sockaddr_in addr,const char *roomName,chatRoom *srcR
 	{
 		errThread("reqLeave unlock err",err);
 	}
+	sprintf(buff,"退出聊天室%s\n",roomName);
+	if((err = sendto(fd,buff,strlen(buff),0,(struct sockaddr*)&addr,sizeof(addr))) == -1)	
+	{
+		printf("sendto %s error.\n",inet_ntoa(addr.sin_addr));
+	}
+
 	free(desUser);
 
 }
