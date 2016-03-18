@@ -4,6 +4,20 @@
 
 #define USERNAME_MAX 32    //用户名长度
 
+
+void useGuide()
+{
+	printf("温馨提示:\n");
+	printf("1.每个用户可以加入多个聊天室;\n");
+	printf("2.启动客户端的时候默认加入Common聊天室;\n");
+	printf("3./join ChannelName是加入聊天室，如果聊天室不存在，则创建该聊天室.\n");
+	printf("4./leave ChannelName是退出聊天室，Commo聊天室不可以退出.\n");
+	printf("5./switch ChannelName是切换聊天室，如果聊天室不存在，则切换失败.\n");
+	printf("6./list列出当前存在的聊天室.\n");
+	printf("7./who ChannelName列出指定的聊天室的成员.\n");
+	printf("8.不加\"/\"表示用户发聊天内容.\n");
+}
+
 int main(int argc,char *argv[])
 {
 	int clientfd;
@@ -11,10 +25,12 @@ int main(int argc,char *argv[])
 
 	if(argc != 4 || strlen(argv[3]) >= USERNAME_MAX)    //用户名不能过长
 	{
+		printf("请输入四个参数，第一个为程序名，第二个为服务器端IP地址，第三个为端口号，第四个为用户名.\n");
 		fprintf(stderr,"usage:%s\n",argv[0]);
 		exit(1);
 	}
 
+	useGuide();
 	memset(&servaddr,0,sizeof(servaddr));
 	servaddr.sin_family = AF_INET;
 	servaddr.sin_port = htons(atoi(argv[2]));

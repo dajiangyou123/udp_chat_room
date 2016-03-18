@@ -315,7 +315,7 @@ void reqList(int fd,struct sockaddr_in addr)
 }
 
 //列出某聊天室的所有成员
-void reqWho(const char* cmd,int fd,struct sockaddr_in addr)
+void reqWho(int fd,const char* cmd,struct sockaddr_in addr)
 {
 	chatRoom* room = findRoomFromList(cmd);
 	int flag;
@@ -343,7 +343,7 @@ void reqWho(const char* cmd,int fd,struct sockaddr_in addr)
 			errThread("reqWho unlock err",err);
 		}
 	}
-	flag = sendto(fd,buff,strlen(buff),0,(struct sockaddr*)&(addr),sizeof(addr));
+	flag = sendto(fd,buff,strlen(buff),0,(struct sockaddr*)&addr,sizeof(addr));
 	if(flag < 0)
 	{
 		printf("send to %s error\n",inet_ntoa(addr.sin_addr));
@@ -353,19 +353,38 @@ void reqWho(const char* cmd,int fd,struct sockaddr_in addr)
 
 
 //执行/join 指令，将用户加入指定的聊天室，若该聊天室不存在，则创建该聊天室
-void reqJoin(struct sockaddr_in addr,const char *roomName,chatRoom *srcRoom)
+void reqJoin(int fd,struct sockaddr_in addr,const char *roomName,chatRoom *srcRoom)
 {
+
+	char buff[BUFF_MAX];
+	int err;
 	if(strcmp(roomName,srcRoom->roomName) == 0)	 //如果要加入的聊天室就是当前聊天室，则不做处理
+	{
+		sprintf(buff,"要加入的聊天室是当前用户所在的聊天室,请重新选择加入其它聊天室.\n");
+		if((err = sendto(fd,buff,strlen(buff),0,(struct sockaddr*)&addr,sizeof(addr))) < 0)			
+		{
+			printf("send to %s error\n",inet_ntoa(addr.sin_addr));
+		}
 		return;
+	}
 	
 	//如果将要加入的聊天室中已经有该用户了，那么直接将该用户的flag变为1即可。
 	chatRoom* desRoom = findRoomFromList(roomName);
-	int err;
 	int jud = 0;
 
 	 //若该要加入的聊天室不存在，则新建一个
 	if(desRoom == NULL)
 	{
+		//如果聊天室数量过多，那么创建失败
+		if(glChatRoom.size == CHANNEL_MAX)
+		{
+			sprintf(buff,"加入失败，当前聊天室数量过多，请使用\"/list\"指令查看聊天室列表，并加入其它聊天室\n");
+			if((err = sendto(fd,buff,strlen(buff),0,(struct sockaddr*)&addr,sizeof(addr))) < 0)
+			{
+				printf("send to %s error\n",inet_ntoa(addr.sin_addr));
+			}
+			return;
+		}
 		createRoom(roomName);
 	}
 	else
@@ -410,7 +429,12 @@ void reqJoin(struct sockaddr_in addr,const char *roomName,chatRoom *srcRoom)
 	{
 		addUserToRoom(addr,desUser->userName,roomName);
 	}
-
+	
+	sprintf(buff,"加入聊天室%s成功\n",roomName);
+	if((err = sendto(fd,buff,strlen(buff),0,(struct sockaddr*)&addr,sizeof(addr))) < 0)
+	{
+		printf("send to %s error.\n",inet_ntoa(addr.sin_addr));
+	}
 	printf("%s join %s\n",desUser->userName,roomName);
 	
 }
@@ -432,7 +456,7 @@ void reqSwitch(int fd,struct sockaddr_in addr,const char* roomName,chatRoom *src
 	{
 		char buff[47];  //47 = CHANNELNAME_MAX + 15	
 		sprintf(buff,"%s is not exist.\n",roomName);
-		err = sendto(fd,buff,strlen(buff),0,(struct sockaddr*)&(addr),sizeof(addr));
+		err = sendto(fd,buff,strlen(buff),0,(struct sockaddr*)&addr,sizeof(addr));
 		if(err < 0)
 		{
 			printf("send to %s error\n",inet_ntoa(addr.sin_addr));
@@ -610,12 +634,12 @@ void handleCmd(threadPara request,chatRoom *userRoom)
 	}
 	if(strncmp(cmd,"/who ",5) == 0)
 	{
-		reqWho(cmd+5,request.fd,request.clAddr);
+		reqWho(request.fd,cmd + 5,request.clAddr);
 		return;
 	}
 	if(strncmp(cmd,"/join ",6) == 0)
 	{
-		reqJoin(request.clAddr,cmd+6,userRoom);
+		reqJoin(request.fd,request.clAddr,cmd+6,userRoom);
 		return;
 	}
 	if(strncmp(cmd,"/switch ",8) == 0)
