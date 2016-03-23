@@ -10,6 +10,7 @@
 #define CHANNEL_MAX  32    //聊天室数量最大值
 #define USERNAME_MAX 32    //用户名长度
 #define USER_MAX 64     //单聊天室用户数量
+#define COMMONUSER_MAX 2048    //Common聊天室总数量
 #define CHANNELNAME_MAX 32   //聊天室名字长度
  
 #define SERPORT  8888    //服务器端口号
@@ -100,6 +101,21 @@ int addrEqual(struct sockaddr_in addr1,struct sockaddr_in addr2)
 	return 0;
 }
 
+
+//聊天室中用户的数量
+int roomSize(chatRoom *room)
+{
+	int len = 0;
+	user *curUser = room->userList;
+	while(curUser)
+	{
+		len++;
+		curUser = curUser->next;
+	}
+	return len;
+}
+
+
 //线程出错处理函数
 void errThread(const char *str,int err)
 {
@@ -107,6 +123,32 @@ void errThread(const char *str,int err)
 	pthread_exit(NULL);
 }
 
+//删除聊天室中的某一用户
+void delUser(user *delUser,chatRoom *delRoom)
+{
+	user* curUser= delRoom->userList;
+	if(addrEqual(curUser->ipAddr,delUser->ipAddr))	
+	{
+		delRoom->userList = curUser->next;	
+	}
+	else
+	{
+		while(curUser->next)
+		{
+		
+			if(addrEqual(curUser->next->ipAddr,delUser->ipAddr))
+			{
+				curUser->next = delUser->next;
+				break;
+			}
+			curUser = curUser->next;
+		}
+	}
+
+	free(delUser);
+
+
+}
 
 //查找某用户是否在聊天室列表中
 chatRoom* findUserFromList(struct sockaddr_in addr)
@@ -667,6 +709,18 @@ void* handleRequest(void *arg)
 	chatRoom *userRoom = findUserFromList(request.clAddr);
 	if(userRoom == NULL)     //如果不存在，则将该用户放入Common聊天室中
 	{
+		chatRoom *commonRoom = findRoomFromList("Common");
+		int len = roomSize(commonRoom);
+		if(len == COMMONUSER_MAX)
+		{
+			char buff[BUFF_MAX];
+			sprintf(buff,"所有聊天室都已满，请稍后在登录。\n");
+			if(sendto(request.fd,buff,strlen(buff),0,(struct sockaddr*)&request.clAddr,sizeof(request.clAddr)) < 0)
+			{
+				printf("send to %s error.\n",inet_ntoa(request.clAddr.sin_addr));
+			}
+			return NULL;
+		}
 		if(addUserToRoom(request.clAddr,request.content,"Common") == 0)  //如果Common聊天室不存在了,则重新创建一个
 		{
 			createRoom("Common");
